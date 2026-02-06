@@ -1,0 +1,374 @@
+from re import match, findall, Match
+from math import gcd
+import cmath
+import math
+from typing import List
+from time import time
+from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
+
+
+# Currently working on parsing and solving quadratic functions first, linear later
+# The class is currently treating all equations as a quadratic equation
+# More features are about to come, such as solving linear functions, math operators, etc
+
+# TO-DO LIST:
+#   + Finish the Equation.simplify_root() method and the Equation.is_quadratic() method.
+#   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
+#   + Simplify the equation and the result of the equation when it is displayed (DONE)
+#   + Make performing calculations with these results possible
+#       (using __add__, __radd__, __mul__ , etc) (DONE)
+#   + Add docstrings to each method to explain how it works.
+
+
+class EquationError(Exception):
+    """Raise when an equation is shown to be invalid \n
+    (e.g. coeff `a` is zero in a quadratic equation, weird symbols, etc)."""
+
+    pass
+
+
+class Equation:
+    """
+    A class that solves simple symbolic equations.\n
+    Currently only supports linear and quadratic equations.
+    """
+
+    def __init__(self, equation: str):
+        self.equation = equation.replace(" ", "").replace("**1", "")
+        self._symbol = self.symbol
+        nested_operators = ["+-", "-+", "++", "--"]
+        while any(x in self.equation for x in nested_operators):
+            self.equation = (
+                self.equation.replace("+-", "-")
+                .replace("-+", "-")
+                .replace("--", "+")
+                .replace("++", "+")
+            )
+        self._degree = self.degree
+        self._parse = self.parse
+
+    @property
+    def symbol(self) -> str:
+        """
+        Return the character of the symbol in the equation.
+        """
+        pattern = r"[a-zA-Z]"
+        chars = findall(pattern, self.equation)
+        chars_set = set(chars)
+        if (i := len(chars_set)) > 1 or i < 1:
+            raise EquationError(
+                f"Equation must have only one symbol, found {i}: \
+                                {sorted(list(chars_set))}"
+            )
+        elif special := findall(r"[^a-zA-Z0-9+\-*.]", self.equation):
+            raise EquationError(
+                "Invalid special character(s) found in equation: '"
+                + "','".join(special)
+                + "'"
+            )
+        else:
+            return chars[0]
+
+    @staticmethod
+    def _get_degree(expr):
+        pattern = r"(?<=[a-zA-Z]\*\*)\d+"
+        exp = findall(pattern, expr)
+        deg = max(int(x) for x in exp) if exp else 1
+        if deg == 0:
+            raise ZeroDivisionError("Equation cannot have zero as its largest degree")
+        return deg
+
+    @property
+    def degree(self) -> int:
+        """Return the largest degree of the equation."""
+
+        # Find any matches that immediately precedes the equation symbol
+        # with the double asterisks
+        # pattern = rf"(?<={self.symbol}\*\*)\d+"
+        # exp = findall(pattern, self.equation)
+        # deg = max(int(x) for x in exp) if exp else 1
+        # if deg == 0:
+        #     raise ZeroDivisionError("Equation cannot have zero as its largest degree")
+        # return deg
+        return Equation._get_degree(self.equation)
+
+    def __repr__(self):
+        return self.__str__().replace(" = 0", "", 1)
+
+    def __str__(self):
+        exprs = self.find()
+        if exprs[0].startswith("+"):
+            exprs[0] = exprs[0].replace("+", "", 1)
+        return f"{' '.join(exprs)} = 0"
+
+    def __find(self, b_pattern=False, get_c=False, get_d=False):
+        number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
+        symbol = r"\*?[a-zA-Z]"
+        # pattern matching any exponent (for attaching to individual terms)
+        exp_pattern = r"(?:\*\*\d+)"
+        # pattern for highest-degree validation
+        highest_deg_pattern = rf"(?:\*\*{self.degree})"
+        if (
+            self.degree > 1
+            and (deg_count := len(findall(highest_deg_pattern, self.equation))) != 1
+        ):
+            raise EquationError(
+                f"Expected only one highest-degree term, found {deg_count}"
+            )
+        if b_pattern:
+            return rf"{number}(?={symbol})"
+        sym_pattern = rf"(?:{number}|[+-])?{symbol}{exp_pattern}?"
+        sym = sorted(
+            findall(sym_pattern, self.equation), reverse=True, key=Equation._get_degree
+        )
+        if get_c:
+            remainder = self.equation
+            for term in sym:
+
+                remainder = remainder.replace(term, "", 1)
+            return remainder
+        # print("from __find():", sym)
+        return sym
+
+    def find(self) -> List[str]:
+        """Return a list containing all expressions of an equation,
+        in sorted order. All elements of this list are strings."""
+        if self.__find(get_c=True):  # Check if c is provided
+            sorted_order = self.__find() + [self.__find(get_c=True)]
+        else:
+            sorted_order = self.__find()
+
+        ops = "+-"
+        for x, y in enumerate(sorted_order):
+            if x == 0:
+                continue
+            if all(c != y[0] for c in ops):
+                sorted_order[x] = "+" + y
+
+        return sorted_order
+
+    @property
+    def parse(self) -> List[int | float]:
+        """
+        Parse the quadratic equation, and return a list containing all
+        coefficients from the equation, if valid. The quadratic equation
+        can be scrambled/unordered, such as 2x+8.5x**2+2. Also works well
+        with cubic equations and 4-degree equations.
+        Example:
+
+        """
+
+        def get_operator(expr: str):
+            return -1 if expr.strip().startswith("-") else 1
+
+        def f_value(expr: str) -> int | float:
+            val = float(expr)
+            return int(val) if val.is_integer() else val
+
+        def get_value(expr: str, match_obj: Match):
+            try:
+                num = float(expr)
+                return int(num) if num.is_integer() else num
+            except ValueError:
+                if match_obj:
+                    return f_value(match_obj.group())
+                return get_operator(expr)
+
+        sym: list = self.__find()
+        ex = sym
+        if len(sym) < self.degree:
+            for x, y in enumerate(ex):
+                if Equation._get_degree(y) != self.degree - x:
+                    sym.insert(x, 0)
+            sym.extend([0] * (self.degree - len(sym)))
+        num = f_value(self.__find(get_c=True) or "0")
+        for i in range(len(sym)):
+            if isinstance(sym[i], str):
+                sym[i] = get_value(sym[i], match(self.__find(b_pattern=True), sym[i]))
+
+        return sym + [num]
+
+    def quick_simplify(self):
+        pass
+
+    def solve(
+        self, allow_imag=True
+    ) -> PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction]:
+        """Return a dictionary containing all real roots and imaginary roots
+        of an equation (if possible). \n
+        All roots are simplified and are instances of the PrettySqrtExpr
+        class (If the result contains a square root), which can be evaluated
+        or used for calculating with other expressions. The single asterisk
+        character ('*') can be used to imply multiplications between the
+        coefficients and the symbol (optional).
+
+        Example:
+        ```python
+            Equation("x**2-12x+3").solve()
+            {'x1': 6 + sqrt(33), 'x2': 6 - sqrt(33)}
+            Equation("x**2 - 5x + 7").solve()
+            {'x1': 5/2 - 1/2*i*sqrt(3), 'x2': 5/2 + 1/2*i*sqrt(3)}
+            Equation("12x-7+22x**2").solve() #Scrambled equation
+            {'x1': -3/11 + 1/22*sqrt(190), 'x2': -3/11 - 1/22*sqrt(190)}
+            Equation("5y**2-15y+12").solve() #Different symbol
+            {'y1': 3/2 - 1/10*i*sqrt(15), 'y2': 3/2 + 1/10*i*sqrt(15)}
+            ```
+        """
+        parsed_eq = self.parse
+        try:
+            if (divisor := gcd(*parsed_eq)) > 1:
+                # Attempt to simplify the coefficients by dividing each coefficient
+                # by the greatest common divisor of a, b, c (if it exists)
+                for x in range(len(parsed_eq)):
+                    parsed_eq[x] //= divisor
+        except TypeError:
+            pass
+
+        if self.degree == 1:
+            a, b = parsed_eq
+            return PrettyFraction(-b, a)
+        elif self.degree == 2:
+            a, b, c = parsed_eq
+            delta = b**2 - 4 * a * c
+            denominator = 2 * a
+            solution = {f"{self.symbol}1": None, f"{self.symbol}2": None}
+
+            def _safe_div(num, den):
+                # Delegate to PrettySqrtExpr division when appropriate
+                if isinstance(num, PrettySqrtExpr):
+                    return num / den
+                if isinstance(num, PrettyFraction):
+                    res = num / PrettyFraction(den)
+                    return int(res) if res.denominator == 1 else res
+                if isinstance(num, int):
+                    return num // den if num % den == 0 else PrettyFraction(num, den)
+                # fallback
+                return num / den
+
+            if delta < 0 and not allow_imag:
+                raise EquationError(
+                    f"Equation {self} has no real solutions \
+                                    (allow_imag = False)"
+                )
+            if delta == 0:
+                return {self.symbol: _safe_div(-b, 2 * a)}
+
+            else:
+                delta_root = PrettySqrt(delta)
+                n = [
+                    _safe_div(-b + delta_root, denominator),
+                    _safe_div(-b - delta_root, denominator),
+                ]
+                for x, y in enumerate(solution.keys()):
+                    solution[y] = n[x]
+            return solution
+
+        elif self.degree == 3:
+            a, b, c, d = parsed_eq
+
+            if a == 0:
+                raise EquationError("Leading coefficient a cannot be zero for cubic")
+
+            def cbrt_complex(z):
+                if z == 0:
+                    return 0
+                return cmath.exp(cmath.log(z) / 3)
+
+            A, B, C, D = a, b, c, d
+
+            # Depressed cubic substitution x = y + shift
+            shift = -B / (3 * A)
+            p = (3 * A * C - B * B) / (3 * A * A)
+            q = (2 * B**3 - 9 * A * B * C + 27 * A * A * D) / (27 * A**3)
+
+            discr = (q / 2) ** 2 + (p / 3) ** 3
+
+            roots = []
+
+            def _simplify(z):
+                # convert near-real complex numbers to real ints/floats
+                if isinstance(z, complex):
+                    if abs(z.imag) < 1e-12:
+                        r = z.real
+                        if abs(r - round(r)) < 1e-12:
+                            return int(round(r))
+                        return float(r)
+                    return z
+                return z
+
+            if discr > 1e-14:
+                # one real root, two complex
+                sqrt_disc = cmath.sqrt(discr)
+                u = cbrt_complex(-q / 2 + sqrt_disc)
+                v = cbrt_complex(-q / 2 - sqrt_disc)
+                y1 = u + v
+                y2 = -(u + v) / 2 + (u - v) * cmath.sqrt(3) / 2 * 1j
+                y3 = -(u + v) / 2 - (u - v) * cmath.sqrt(3) / 2 * 1j
+                roots = [y1 + shift, y2 + shift, y3 + shift]
+            elif abs(discr) <= 1e-14:
+                # multiple roots (at least two equal)
+                u = cbrt_complex(-q / 2)
+                y1 = 2 * u
+                y2 = -u
+                roots = [y1 + shift, y2 + shift, y2 + shift]
+            else:
+                # three distinct real roots
+                # use trigonometric solution
+                rho = math.sqrt(-(p**3) / 27)
+                # clamp value for acos
+                val = (-q / 2) / rho
+                val = max(min(val, 1), -1)
+                phi = math.acos(val)
+                m = 2 * math.sqrt(-p / 3)
+                y1 = m * math.cos(phi / 3)
+                y2 = m * math.cos((phi + 2 * math.pi) / 3)
+                y3 = m * math.cos((phi + 4 * math.pi) / 3)
+                roots = [y1 + shift, y2 + shift, y3 + shift]
+
+            solution = {}
+            for i, r in enumerate(roots, start=1):
+                solution[f"{self.symbol}{i}"] = _simplify(r)
+            return solution
+
+
+def solve(
+    equation: str, allow_imag=True
+) -> PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction]:
+    """
+    This function is equivalent to the following method:
+    ```python
+    Equation(equation).solve(allow_imag: bool = True|False)
+    ```. \n
+    Return a dictionary containing all real roots and imaginary roots
+    of an equation (if possible). \n
+    All roots are simplified and are instances of the PrettySqrtExpr
+    class (If the result contains a square root), which can be evaluated
+    or used for calculating with other expressions. The single asterisk
+    character ('*') can be used to imply multiplications between the
+    coefficients and the symbol (optional).
+
+    Example:
+    ```python
+        solve("x**2-12x+3")
+        {'x1': 6 + sqrt(33), 'x2': 6 - sqrt(33)}
+        solve("x**2 - 5x + 7")
+        {'x1': 5/2 - 1/2*i*sqrt(3), 'x2': 5/2 + 1/2*i*sqrt(3)}
+        solve("12x-7+22x**2") #Scrambled equation
+        {'x1': -3/11 + 1/22*sqrt(190), 'x2': -3/11 - 1/22*sqrt(190)}
+        solve("5y**2-15y+12") #Different symbol
+        {'y1': 3/2 - 1/10*i*sqrt(15), 'y2': 3/2 + 1/10*i*sqrt(15)}
+        ```
+    """
+    return Equation(equation).solve(allow_imag)
+
+
+if __name__ == "__main__":
+    expr = input() or "5x**3+5x**2-3x-2"
+    # expr = "2x**2+2+8x**3"
+    t = time()
+    equation = Equation(expr)
+    print(equation.find())
+    print(equation)
+    print(equation.parse)
+    print(equation.solve())
+    print(time() - t)
