@@ -44,7 +44,7 @@ class Equation:
             self.equation = simplify.equation
         self.equation = self._remove_zeroes()
         self._symbol = self.symbol
-        #self._parse = self.parse
+        self._parse = self.parse
     @property
     def symbol(self) -> str:
         """
@@ -149,7 +149,7 @@ class Equation:
         if not check_num:
             try:
                 Equation(eq)
-            except EquationError:
+            except (EquationError, ValueError):
                 return False
             return True
         return isnumber(eq)
@@ -476,5 +476,6 @@ if __name__ == "__main__":
     #print(Equation("3x+5=-2"))
     #print(Equation("3x+5-5+x**2-2x**2"))
     print(Equation("2x**2+2x+1 = 3x**2+3x+2"))
-    print(Equation.from_parse([0, 1, 0, -1]))
+    print(Equation.from_parse([0, 1, 0, -1, -2, 3]))
+    print(Equation.is_valid(input()))
     
