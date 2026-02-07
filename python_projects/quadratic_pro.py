@@ -5,11 +5,6 @@ import math
 from typing import List, Literal, Self
 from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
 
-
-# Currently working on parsing and solving quadratic functions first, linear later
-# The class is currently treating all equations as a quadratic equation
-# More features are about to come, such as solving linear functions, math operators, etc
-
 # TO-DO LIST:
 #   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
 #   + Simplify the equation and the result of the equation when it is displayed
@@ -46,7 +41,7 @@ class Equation:
         if hasattr(simplify, "equation"):
             self.equation = simplify.equation
         self._symbol = self.symbol
-        self._parse = self.parse
+        #self._parse = self.parse
     @property
     def symbol(self) -> str:
         """
@@ -197,7 +192,7 @@ class Equation:
                 helper += str(nums[ind])
         return Equation(helper) 
     
-    
+
     def _quick_simplify(self):
         def convert(numbers):
             res = float(numbers)
@@ -223,9 +218,10 @@ class Equation:
                 else:
                     raise InvalidAssignmentError(f"Invalid equation: {self.equation}")
                     
-            except ValueError:
+            except ValueError as e:
                 raise InvalidAssignmentError(
-                    f"Expected 1 assignment operator '=', found {len(expr)}"
+                    f"Expected 1 assignment operator '=', found {len(expr)-1}\n"
+                    f"(Original error message: {e})"
                     )
             L, R = Equation.from_parse(left), Equation.from_parse(right)
             left_deg, right_deg = L.degree, R.degree
@@ -454,3 +450,4 @@ def solve(
 if __name__ == "__main__":
     print(Equation("3x**3+5=2x**2+14x+2"))
     print(Equation("3x+5=-2"))
+    print(Equation("3x+5-5+x**2-2x**2"))
