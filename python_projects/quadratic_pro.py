@@ -1,4 +1,4 @@
-from re import match, findall, Match
+from re import match, findall, Match, sub
 from math import gcd
 import cmath
 import math
@@ -25,7 +25,9 @@ class Equation:
     A class that solves simple symbolic equations.\n
     Currently only supports linear and quadratic equations.
     """
-    
+    number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
+    symbol = r"\*?[a-zA-Z]"
+    exp_pattern = r"(?:\*\*\d+)"
     def __init__(self, equation: str):
         
         self.equation = equation.replace(" ", "").replace("**1", "")
@@ -40,6 +42,7 @@ class Equation:
         simplify = self._quick_simplify()
         if hasattr(simplify, "equation"):
             self.equation = simplify.equation
+        self.equation = self._remove_zeroes()
         self._symbol = self.symbol
         #self._parse = self.parse
     @property
@@ -92,22 +95,10 @@ class Equation:
         return f"{' '.join(exprs)} = 0"
 
     def __find(self, b_pattern=False, get_c=False, get_d=False):
-        number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
-        symbol = r"\*?[a-zA-Z]"
-        # pattern matching any exponent (for attaching to individual terms)
-        exp_pattern = r"(?:\*\*\d+)"
-        # pattern for highest-degree validation
-        #highest_deg_pattern = rf"(?:\*\*{self.degree})"
-        # if (
-        #     self.degree > 1
-        #     and (deg_count := len(findall(highest_deg_pattern, self.equation))) != 1
-        # ):
-        #     raise EquationError(
-        #         f"Expected only one highest-degree term, found {deg_count}"
-        #     )
+    
         if b_pattern:
-            return rf"{number}(?={symbol})"
-        sym_pattern = rf"(?:{number}|[+-])?{symbol}{exp_pattern}?"
+            return rf"{self.number}(?={self.symbol})"
+        sym_pattern = rf"(?:{self.number}|[+-])?{self.symbol}{self.exp_pattern}?"
         sym = sorted(
             findall(sym_pattern, self.equation), reverse=True, key=Equation._get_degree
         )
@@ -134,7 +125,6 @@ class Equation:
                 continue
             if all(c != y[0] for c in ops):
                 sorted_order[x] = "+" + y
-
         return sorted_order
         
     
@@ -164,7 +154,36 @@ class Equation:
             return True
         return isnumber(eq)
         
-        
+    def _remove_zeroes(self):
+        expr = self.equation
+    
+        # 1) Remove terms like 0x, 000x, 0*x, x*0, including exponentiation: 0x**n
+        expr = sub(
+            r'(^|[+\-])(?:0+(?:\*?[a-zA-Z](?:\*\*\d+)?)|(?:[a-zA-Z](?:\*\*\d+)?\*0+))',
+            r'\1',
+            expr
+        )
+    
+        # 2) Remove standalone zeros: +0, -0, +000, -000
+        expr = sub(r'([+\-])0+(?=[+\-]|$)', r'\1', expr)
+    
+        # 3) Remove leading zeros in numeric coefficients (0005x → 5x)
+        expr = sub(r'(^|[+\-])0+(?=\d)', r'\1', expr)
+    
+        # 4) Cleanup redundant operators
+        expr = expr.lstrip("+")
+        expr = sub(r'\+\-', '-', expr)
+        expr = sub(r'\-\+', '-', expr)
+        expr = sub(r'\+\+', '+', expr)
+        expr = sub(r'\-\-', '+', expr)
+    
+        # 5) Fallback if everything vanished → 0
+        if not expr or expr in "+-":
+            expr = "0"
+    
+        self.equation = expr.rstrip("+").rstrip("-")
+        return self.equation
+        ...
     @staticmethod
     def from_parse(
         nums: List[int | float], 
@@ -179,17 +198,22 @@ class Equation:
         for ind, coeff in enumerate(nums):
             deg = len(nums) - (ind + 1)
             if deg > 0:
-                c = coeff if coeff != 1 else ""
+                c = ""
+                if coeff > 0: 
+                    c = coeff if coeff != 1 else ""
+                else:
+                    c = coeff if coeff != -1 else "-"
                 op = "+" if not any(
                     str(coeff).startswith(x) 
                     for x in "+-"
                     ) else ""
                 d = f"**{deg}" if deg != 1 else ""
                 #m = "*" if not remove_mul else ""
-                exponent = f"{op}{c}{sym}{d}"
+                exponent = f"{op}{c}{sym}{d}" 
                 helper += exponent
             elif deg == 0:
                 helper += str(nums[ind])
+        
         return Equation(helper) 
     
 
@@ -448,6 +472,9 @@ def solve(
 
 
 if __name__ == "__main__":
-    print(Equation("3x**3+5=2x**2+14x+2"))
-    print(Equation("3x+5=-2"))
-    print(Equation("3x+5-5+x**2-2x**2"))
+    #print(Equation("3x**3+5=2x**2+14x+2"))
+    #print(Equation("3x+5=-2"))
+    #print(Equation("3x+5-5+x**2-2x**2"))
+    print(Equation("2x**2+2x+1 = 3x**2+3x+2"))
+    print(Equation.from_parse([0, 1, 0, -1]))
+    
