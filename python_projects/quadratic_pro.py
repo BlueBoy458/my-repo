@@ -2,8 +2,7 @@ from re import match, findall, Match
 from math import gcd
 import cmath
 import math
-from typing import List
-from time import time
+from typing import List, Literal, Self
 from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
 
 
@@ -12,11 +11,8 @@ from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
 # More features are about to come, such as solving linear functions, math operators, etc
 
 # TO-DO LIST:
-#   + Finish the Equation.simplify_root() method and the Equation.is_quadratic() method.
 #   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
-#   + Simplify the equation and the result of the equation when it is displayed (DONE)
-#   + Make performing calculations with these results possible
-#       (using __add__, __radd__, __mul__ , etc) (DONE)
+#   + Simplify the equation and the result of the equation when it is displayed
 #   + Add docstrings to each method to explain how it works.
 
 
@@ -26,16 +22,18 @@ class EquationError(Exception):
 
     pass
 
-
+class InvalidAssignmentError(Exception):
+    ...
+    
 class Equation:
     """
     A class that solves simple symbolic equations.\n
     Currently only supports linear and quadratic equations.
     """
-
+    
     def __init__(self, equation: str):
+        
         self.equation = equation.replace(" ", "").replace("**1", "")
-        self._symbol = self.symbol
         nested_operators = ["+-", "-+", "++", "--"]
         while any(x in self.equation for x in nested_operators):
             self.equation = (
@@ -44,33 +42,38 @@ class Equation:
                 .replace("--", "+")
                 .replace("++", "+")
             )
-        self._degree = self.degree
+        simplify = self._quick_simplify()
+        if hasattr(simplify, "equation"):
+            self.equation = simplify.equation
+        self._symbol = self.symbol
         self._parse = self.parse
-
     @property
     def symbol(self) -> str:
         """
         Return the character of the symbol in the equation.
         """
+        def __separate(n: list) -> str:
+            return "','".join(n) + "'"
         pattern = r"[a-zA-Z]"
         chars = findall(pattern, self.equation)
         chars_set = set(chars)
         if (i := len(chars_set)) > 1 or i < 1:
             raise EquationError(
-                f"Equation must have only one symbol, found {i}: \
-                                {sorted(list(chars_set))}"
+                f"Equation must have only one symbol, found {i}:"
+                    f"{__separate(sorted(list(chars_set)))}"
             )
-        elif special := findall(r"[^a-zA-Z0-9+\-*.]", self.equation):
+        elif special := findall(r"[^a-zA-Z0-9+\-*=.]", self.equation):
             raise EquationError(
                 "Invalid special character(s) found in equation: '"
-                + "','".join(special)
-                + "'"
+                + __separate(special)
             )
         else:
             return chars[0]
 
     @staticmethod
     def _get_degree(expr):
+        # Find any matches that immediately precedes the equation symbol
+        # with the double asterisks
         pattern = r"(?<=[a-zA-Z]\*\*)\d+"
         exp = findall(pattern, expr)
         deg = max(int(x) for x in exp) if exp else 1
@@ -82,14 +85,6 @@ class Equation:
     def degree(self) -> int:
         """Return the largest degree of the equation."""
 
-        # Find any matches that immediately precedes the equation symbol
-        # with the double asterisks
-        # pattern = rf"(?<={self.symbol}\*\*)\d+"
-        # exp = findall(pattern, self.equation)
-        # deg = max(int(x) for x in exp) if exp else 1
-        # if deg == 0:
-        #     raise ZeroDivisionError("Equation cannot have zero as its largest degree")
-        # return deg
         return Equation._get_degree(self.equation)
 
     def __repr__(self):
@@ -107,14 +102,14 @@ class Equation:
         # pattern matching any exponent (for attaching to individual terms)
         exp_pattern = r"(?:\*\*\d+)"
         # pattern for highest-degree validation
-        highest_deg_pattern = rf"(?:\*\*{self.degree})"
-        if (
-            self.degree > 1
-            and (deg_count := len(findall(highest_deg_pattern, self.equation))) != 1
-        ):
-            raise EquationError(
-                f"Expected only one highest-degree term, found {deg_count}"
-            )
+        #highest_deg_pattern = rf"(?:\*\*{self.degree})"
+        # if (
+        #     self.degree > 1
+        #     and (deg_count := len(findall(highest_deg_pattern, self.equation))) != 1
+        # ):
+        #     raise EquationError(
+        #         f"Expected only one highest-degree term, found {deg_count}"
+        #     )
         if b_pattern:
             return rf"{number}(?={symbol})"
         sym_pattern = rf"(?:{number}|[+-])?{symbol}{exp_pattern}?"
@@ -146,19 +141,115 @@ class Equation:
                 sorted_order[x] = "+" + y
 
         return sorted_order
-
+        
+    
+    
+    @staticmethod
+    def is_valid(eq: str, check_num = False) -> bool:
+        """ 
+        Check if an equation is valid or not. An equation is considered to be valid
+        if it satisfies the following: \n 
+        — The equation should only have only one symbolic term. \n
+        — The equation must not have any unsupported special characters. \n
+        — Operators, especially '*' and '=', should be placed correctly in the equation. \n\n
+        
+        
+        If the string is not qualified as a valid equation and `check_num` is True, 
+        This method will check if the given string is a valid number.
+        """
+        def isnumber(n):
+            return (n.replace(".", "", 1)
+            .replace("-", "", 1)).isdigit()
+        
+        if not check_num:
+            try:
+                Equation(eq)
+            except EquationError:
+                return False
+            return True
+        return isnumber(eq)
+        
+        
+    @staticmethod
+    def from_parse(
+        nums: List[int | float], 
+        sym = "x"
+        ) -> Self:
+        """
+        Given a list containing all coefficients of an equation, return
+        an Equation that correctsponds to that parse.
+        """
+        helper = ""
+        
+        for ind, coeff in enumerate(nums):
+            deg = len(nums) - (ind + 1)
+            if deg > 0:
+                c = coeff if coeff != 1 else ""
+                op = "+" if not any(
+                    str(coeff).startswith(x) 
+                    for x in "+-"
+                    ) else ""
+                d = f"**{deg}" if deg != 1 else ""
+                #m = "*" if not remove_mul else ""
+                exponent = f"{op}{c}{sym}{d}"
+                helper += exponent
+            elif deg == 0:
+                helper += str(nums[ind])
+        return Equation(helper) 
+    
+    
+    def _quick_simplify(self):
+        def convert(numbers):
+            res = float(numbers)
+            return res if not res.is_integer() else int(res)
+        def helper(n, r):
+            for x in range(r):
+                n.insert(0, 0)
+        if "=" not in self.equation:
+            
+            ...
+        else:
+            expr = self.equation.split("=")
+            res = []
+            try:
+                left, right = [Equation(x).parse for x in expr]
+            except EquationError: 
+                if Equation.is_valid(expr[0], check_num = True):
+                    right = Equation(expr[1]).parse
+                    left = [0]*(len(right) - 1) + [convert(expr[0])]
+                elif Equation.is_valid(expr[1], check_num = True):
+                    left = Equation(expr[0]).parse
+                    right = [0] * (len(left) - 1) + [convert(expr[1])]
+                else:
+                    raise InvalidAssignmentError(f"Invalid equation: {self.equation}")
+                    
+            except ValueError:
+                raise InvalidAssignmentError(
+                    f"Expected 1 assignment operator '=', found {len(expr)}"
+                    )
+            L, R = Equation.from_parse(left), Equation.from_parse(right)
+            left_deg, right_deg = L.degree, R.degree
+            if left_deg < right_deg:
+                helper(left, right_deg - left_deg)
+            else:
+                helper(right, left_deg - right_deg)
+            for x in range(len(left)):
+                res.append(left[x] - right[x])
+            return Equation.from_parse(res, sym = self.symbol)
+        
+            
     @property
     def parse(self) -> List[int | float]:
         """
         Parse the quadratic equation, and return a list containing all
         coefficients from the equation, if valid. The quadratic equation
         can be scrambled/unordered, such as 2x+8.5x**2+2. Also works well
-        with cubic equations and 4-degree equations.
+        with cubic equations and n-degree equations (n >= 4).
         Example:
 
         """
 
-        def get_operator(expr: str):
+        def get_operator(expr: str) -> Literal[-1, 1]:
             return -1 if expr.strip().startswith("-") else 1
 
         def f_value(expr: str) -> int | float:
@@ -175,9 +266,9 @@ class Equation:
                 return get_operator(expr)
 
         sym: list = self.__find()
-        ex = sym
+        
         if len(sym) < self.degree:
-            for x, y in enumerate(ex):
+            for x, y in enumerate(sym):
                 if Equation._get_degree(y) != self.degree - x:
                     sym.insert(x, 0)
             sym.extend([0] * (self.degree - len(sym)))
@@ -188,8 +279,6 @@ class Equation:
 
         return sym + [num]
 
-    def quick_simplify(self):
-        pass
 
     def solve(
         self, allow_imag=True
@@ -363,12 +452,5 @@ def solve(
 
 
 if __name__ == "__main__":
-    expr = input() or "5x**3+5x**2-3x-2"
-    # expr = "2x**2+2+8x**3"
-    t = time()
-    equation = Equation(expr)
-    print(equation.find())
-    print(equation)
-    print(equation.parse)
-    print(equation.solve())
-    print(time() - t)
+    print(Equation("3x**3+5=2x**2+14x+2"))
+    print(Equation("3x+5=-2"))
