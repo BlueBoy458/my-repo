@@ -494,3 +494,4 @@ if __name__ == "__main__":
     # print(Equation("x**3-x**2+x-1").solve(allow_imag=True))
     # help(Equation.solve)
     print(Equation("2x-3=1"))
+    print("done")
