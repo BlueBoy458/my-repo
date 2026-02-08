@@ -25,7 +25,8 @@ def simplify_root(n: int) -> Tuple[int, int]:
 class PrettyFraction(Fraction):
     def __repr__(self):
         return f"{self.__str__()}"
-
+    def limit_denominator(self, max_denominator = 1000000):
+        return PrettyFraction(super().limit_denominator(max_denominator))
 
 Number = Union[int, float, PrettyFraction]
 

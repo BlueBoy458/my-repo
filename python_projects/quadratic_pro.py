@@ -25,12 +25,18 @@ class Equation:
     A class that solves simple symbolic equations.\n
     Currently only supports linear and quadratic equations.
     """
-    number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
-    symbol = r"\*?[a-zA-Z]"
-    exp_pattern = r"(?:\*\*\d+)"
+    __number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
+    __symbols = r"\*?[a-zA-Z]"
+    __exp_pattern = r"(?:\*\*\d+)"
     def __init__(self, equation: str):
         
         self.equation = equation.replace(" ", "").replace("**1", "")
+        
+        simplify = self._quick_simplify()
+        if hasattr(simplify, "equation"):
+            self.equation = simplify.equation
+        self.equation = self._remove_zeroes()
+        #print(self.equation)
         nested_operators = ["+-", "-+", "++", "--"]
         while any(x in self.equation for x in nested_operators):
             self.equation = (
@@ -39,10 +45,6 @@ class Equation:
                 .replace("--", "+")
                 .replace("++", "+")
             )
-        simplify = self._quick_simplify()
-        if hasattr(simplify, "equation"):
-            self.equation = simplify.equation
-        self.equation = self._remove_zeroes()
         self._symbol = self.symbol
         self._parse = self.parse
     @property
@@ -51,14 +53,15 @@ class Equation:
         Return the character of the symbol in the equation.
         """
         def __separate(n: list) -> str:
-            return "','".join(n) + "'"
+            return "'" + "','".join(n) + "'"
         pattern = r"[a-zA-Z]"
         chars = findall(pattern, self.equation)
         chars_set = set(chars)
         if (i := len(chars_set)) > 1 or i < 1:
             raise EquationError(
                 f"Equation must have only one symbol, found {i}:"
-                    f"{__separate(sorted(list(chars_set)))}"
+                    f"{__separate(sorted(list(chars_set)))}\n (From expression '{self.equation}')"
+                    f"({self._quick_simplify()})"
             )
         elif special := findall(r"[^a-zA-Z0-9+\-*=.]", self.equation):
             raise EquationError(
@@ -97,8 +100,8 @@ class Equation:
     def __find(self, b_pattern=False, get_c=False, get_d=False):
     
         if b_pattern:
-            return rf"{self.number}(?={self.symbol})"
-        sym_pattern = rf"(?:{self.number}|[+-])?{self.symbol}{self.exp_pattern}?"
+            return rf"{self.__number}(?={self.__symbols})"
+        sym_pattern = rf"(?:{self.__number}|[+-])?{self.__symbols}{self.__exp_pattern}?"
         sym = sorted(
             findall(sym_pattern, self.equation), reverse=True, key=Equation._get_degree
         )
@@ -133,7 +136,7 @@ class Equation:
     def is_valid(eq: str, check_num = False) -> bool:
         """ 
         Check if an equation is valid or not. An equation is considered to be valid
-        if it satisfies the following: \n 
+        if it satisfies all of the following: \n 
         — The equation should only have only one symbolic term. \n
         — The equation must not have any unsupported special characters. \n
         — Operators, especially '*' and '=', should be placed correctly in the equation. \n\n
@@ -156,13 +159,13 @@ class Equation:
         
     def _remove_zeroes(self):
         expr = self.equation
-    
+        s = self.symbol
         # 1) Remove terms like 0x, 000x, 0*x, x*0, including exponentiation: 0x**n
         expr = sub(
-            r'(^|[+\-])(?:0+(?:\*?[a-zA-Z](?:\*\*\d+)?)|(?:[a-zA-Z](?:\*\*\d+)?\*0+))',
-            r'\1',
-            expr
-        )
+             r'(^|[+\-])(?:0+(?:\*?[a-zA-Z](?:\*\*\d+)?)|(?:[a-zA-Z](?:\*\*\d+)?\*0+))',
+             r'\1',
+             expr
+         )
     
         # 2) Remove standalone zeros: +0, -0, +000, -000
         expr = sub(r'([+\-])0+(?=[+\-]|$)', r'\1', expr)
@@ -182,6 +185,8 @@ class Equation:
             expr = "0"
     
         self.equation = expr.rstrip("+").rstrip("-")
+        if self.equation == "0":
+            return f"0{s}"
         return self.equation
         ...
     @staticmethod
@@ -192,6 +197,14 @@ class Equation:
         """
         Given a list containing all coefficients of an equation, return
         an Equation that correctsponds to that parse.
+
+        Example:
+        >>> Equation.from_parse([1, 2, 0, 4])
+        x**3 +2x**2 +4
+        >>> Equation.from_parse([0, 0, 2, 12]) #Zero values are ignored
+        2x +12
+        >>> Equation.from_parse([12, 2, 3])
+        12x**2 +2x +3
         """
         helper = ""
         
@@ -208,7 +221,6 @@ class Equation:
                     for x in "+-"
                     ) else ""
                 d = f"**{deg}" if deg != 1 else ""
-                #m = "*" if not remove_mul else ""
                 exponent = f"{op}{c}{sym}{d}" 
                 helper += exponent
             elif deg == 0:
@@ -235,12 +247,12 @@ class Equation:
             except EquationError: 
                 if Equation.is_valid(expr[0], check_num = True):
                     right = Equation(expr[1]).parse
-                    left = [0]*(len(right) - 1) + [convert(expr[0])]
+                    left = [0] * (len(right) - 1) + [convert(expr[0])]
                 elif Equation.is_valid(expr[1], check_num = True):
                     left = Equation(expr[0]).parse
                     right = [0] * (len(left) - 1) + [convert(expr[1])]
                 else:
-                    raise InvalidAssignmentError(f"Invalid equation: {self.equation}")
+                    raise InvalidAssignmentError(f"Invalid equation: \"{self.equation}\"")
                     
             except ValueError as e:
                 raise InvalidAssignmentError(
@@ -268,7 +280,6 @@ class Equation:
         Example:
 
         """
-
         def get_operator(expr: str) -> Literal[-1, 1]:
             return -1 if expr.strip().startswith("-") else 1
 
@@ -302,7 +313,7 @@ class Equation:
 
     def solve(
         self, allow_imag=True
-    ) -> PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction]:
+    ) -> PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction] | Literal["inf"]:
         """Return a dictionary containing all real roots and imaginary roots
         of an equation (if possible). \n
         All roots are simplified and are instances of the PrettySqrtExpr
@@ -323,6 +334,8 @@ class Equation:
             {'y1': 3/2 - 1/10*i*sqrt(15), 'y2': 3/2 + 1/10*i*sqrt(15)}
             ```
         """
+        if self.equation == f"0{self.symbol}":
+            return "inf"
         parsed_eq = self.parse
         try:
             if (divisor := gcd(*parsed_eq)) > 1:
@@ -436,7 +449,11 @@ class Equation:
 
             solution = {}
             for i, r in enumerate(roots, start=1):
+                simplified = _simplify(r)
+                if not allow_imag and isinstance(simplified, complex):
+                    continue
                 solution[f"{self.symbol}{i}"] = _simplify(r)
+
             return solution
 
 
@@ -472,10 +489,8 @@ def solve(
 
 
 if __name__ == "__main__":
-    #print(Equation("3x**3+5=2x**2+14x+2"))
-    #print(Equation("3x+5=-2"))
-    #print(Equation("3x+5-5+x**2-2x**2"))
-    print(Equation("2x**2+2x+1 = 3x**2+3x+2"))
-    print(Equation.from_parse([0, 1, 0, -1, -2, 3]))
-    print(Equation.is_valid(input()))
-    
+    # print(Equation("2x**2+2x+1 = 3x**2+3x+2").solve())
+    # print(Equation.from_parse([0, 0, 1, -1, -2, 3]).solve(allow_imag = False))
+    # print(Equation("x**3-x**2+x-1").solve(allow_imag=True))
+    # help(Equation.solve)
+    print(Equation("2x-3=1"))
