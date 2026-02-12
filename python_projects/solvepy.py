@@ -9,7 +9,7 @@ from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
 from timeit import timeit
 # TO-DO LIST:
 #   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
-#   + Simplify the equation and the result of the equation when it is displayed (DONE, probably)
+#   + Simplify the equation and the result of the equation when it is displayed
 #   + Add docstrings to each method to explain how it works.
 
 
@@ -23,19 +23,15 @@ class EquationError(Exception):
 
 class InvalidAssignmentError(Exception):
     ...
-
-class SymbolError(Exception):
-    """ More than one symbol are used in an equation. """
-    pass
     
-def to_equation(x, sym="x"):
+def to_equation(x):
     if isinstance(x, Equation):
         return x
     elif isinstance(x, (str, int, float)):
         return Equation(x)
     elif isinstance(x, Iterable):
-        return Equation.from_parse(x, symbolic=sym)
-
+        return Equation.from_parse(x)
+        
 def sum_helper(n):
     result = sum([float(x) for x in n])
     return int(result) if result.is_integer() else result
@@ -44,19 +40,6 @@ class Equation:
     """
     A class that solves simple symbolic equations.\n
     Currently supports any equation from degree 1 -> 3..
-    Example:
-    >>> a = Equation("a")
-        print(a**2)
-    a**2
-    >>> print((a + 1)**2)
-    a**2 + 2a + 1
-    >>> print((a + 5) * (a - 3))
-    a**2 + 2a - 15 = 0
-    >>> x = Equation("x**2 -18x +7x**3")
-        print(x**4)
-    2401x**12 + 1372x**11 - 24402x**10 - 10556x**9 
-    + 93745x**8 + 27144x**7 - 161352x**6 - 23328x**5 
-    + 104976x**4 = 0
     """
     
     #Class variables (patterns)
@@ -102,24 +85,19 @@ class Equation:
         self.equation = compile(r'\+-|-\+').sub('-', self.equation)
         self.equation = compile(r'\+\+|--').sub('+', self.equation)
             
-    
-    def __check_symbol(self, other):
-        #print(other)
-        if self.symbol != other.symbol and not Equation.__isnumber(str(other)):
-            raise SymbolError(
-                f"Unmatched symbol: '{self.symbol}', '{other.symbol}'"
-                f"(From equation: {self}; {other})"
-                )
+        #These attributes exist to make sure that the program immediately
+        #Catches invalid equation input:
+        #self._symbol = self.symbol
+        #self._degree = self.degree
+        #Now, the program should raise an error when initializing the object
+        #if the equation is invalid. (See Equation.is_valid())
+        
+        
     def __add__(self, other):
         other = to_equation(other).invert()
-        self.__check_symbol(other)
-        return Equation.from_parse(self.parse, other.parse, symbolic=self.symbol)
-    
-    
-    def __radd__(self, other):
-        return self.__add__(other)
-     
-     
+        return Equation.from_parse(self.parse, other.parse)
+        
+        
     def __sub__(self, other):
         return self.__add__(Equation.invert(other))
         
@@ -131,41 +109,19 @@ class Equation:
     def __mul__(self, other):
         if isinstance(other, (int, float)):
             n = [x * other for x in self.parse]
-            return Equation.from_parse(n, symbolic=self.symbol)
+            return Equation.from_parse(n)
         elif isinstance(other, (str, Equation)):
-            self.__check_symbol(other)
             if Equation.__isnumber(other):
                 return self.__mul__(other if float(other).is_integer() else float(other))
-            other = to_equation(other)
             deg = self.degree + other.degree
-            left, right = self.parse, other.parse
-            result = {}
-            for x in range(deg, -1, -1):
-                result[x] = 0
-            for ind, y in enumerate(left[::-1]):
-                for i, z in enumerate(right[::-1]):
-                    a = y * z
-                    result[abs(deg - ind - i)] += a
-            return Equation.from_parse(list(result.values())[::-1], symbolic=self.symbol)
+            
         return NotImplemented
     
     
     def __rmul__(self, other):
         return self.__mul__(other)
+    
         
-        
-    def __pow__(self, other):
-        if not isinstance(other, int) or other < 0:
-            if other < 0:
-                raise TypeError(other)
-            return NotImplemented
-        result = 1
-        while other:
-            if other & 1:
-                result = result * self
-            self *= self
-            other >>= 1
-        return result
     def __truediv__(self, other):
         ...
     
@@ -203,10 +159,10 @@ class Equation:
                     f"{__separate(sorted(list(chars_set)))}\n (From expression '{self.equation}')"
             )
         if i > 1 or (i < 1 and not self.allow_absurd):
-            raise SymbolError(symbol_err)
+            raise EquationError(symbol_err)
             
         elif special := unallowed.findall(self.equation):
-            raise SymbolError(
+            raise EquationError(
                 "Invalid special character(s) found in equation: '"
                 + __separate(special)
             )
@@ -235,9 +191,6 @@ class Equation:
     @cached_property
     def degree(self) -> int:
         """Return the largest degree of the equation."""
-        #print(self.__find([0]))
-        if not self.__find()[0]:
-            return 0
         return Equation._get_degree(self.__find()[0])
         
         
@@ -284,9 +237,17 @@ class Equation:
         
     
     def invert(self):
-        eq = to_equation(self)
-        expr = eq.parse
-        return Equation.from_parse([-x for x in expr], symbolic=eq.symbol)
+        expr = to_equation(self).parse
+        return Equation.from_parse([-x for x in expr])
+        
+        
+    @staticmethod
+    def sum(equations):
+        eq_sum = Equation(0)
+        for equation in equations: 
+            eq_sum += to_equation(equation)
+        return eq_sum
+        ...
         
         
     @staticmethod
@@ -299,8 +260,7 @@ class Equation:
             -8x**3-8x+7x**2-12x+3x**3 -> -5x**3 + 7x**2 - 20x
         """
         coeff = compile(rf"{Equation.__number}(?={Equation.__symbols})(?=(\*\*\d+))?")
-        if expr == []: 
-            return [""]
+        if expr == []: return [""]
         deg = Equation._get_degree(expr[0])
         res = []
         while deg > 0: 
@@ -312,9 +272,7 @@ class Equation:
                     else:
                         found = 1 if not x.startswith("-") else -1
                     n.append(int(found) if found.is_integer() else found)
-            total = sum(n)
-            t = total if total != 1 else ""
-            e = f"{"-" if t == -1 else t}{symbol}"
+            e = f"{sum(n)}{symbol}"
             if deg > 1:
                 res.append(f"{e}**{deg}")
             else:
@@ -472,19 +430,25 @@ class Equation:
                     f"(Original error message: {e})"
                     f"\nFrom expression {expr}"
                     f"\n(Unmodified: {self.unchanged})"
-                    ) from e
+                    )
                     
-            L, R = len(left), len(right)
-            diff = abs(L - R)
-            if L < R:
-                helper(left, diff)
-            elif L > R:
-                helper(right, diff)
+            L, R = Equation.from_parse(left), Equation.from_parse(right)
+            left_deg, right_deg = L.degree, R.degree
+            diff = abs(left_deg - right_deg)
+            
+            if left_deg < right_deg:
+                helper(left, diff+1)
+            else:
+                #helper(right, left_deg - right_deg)
+                helper(right, diff+1) 
+            print(left, right)
             chars = set(findall(r"[a-zA-Z]", self.equation))
             sym = list(chars)[0] if chars else "x"
-            n = len(left) if len(left) < len(right) else len(right)
             for x in range(len(left)): 
                 res.append(left[x] - right[x])
+            # remove leading zeros so we don't produce high-degree zero-terms like "0x**3"
+            #while len(res) > 1 and res[0] == 0:
+                #res.pop(0)
             return Equation.from_parse(res, symbolic = sym)
         
             
@@ -530,14 +494,6 @@ class Equation:
                 sym[i] = get_value(sym[i], self.__find(b_pattern=True).search(sym[i]))
         sym.append(num)
         return sym
-        
-       
-    def assign(self, value):
-        eq = to_equation(self)
-        result = 0
-        for i, x in enumerate(eq.parse[:-1]):
-            result += x * (value)**(i + 1)
-        return result + eq.parse[-1]
         
         
     def solve(
@@ -610,7 +566,7 @@ class Equation:
         if equation.degree == 1:
             try:
                 a, b = parsed_eq
-                return PrettyFraction(-b, a)
+                return PrettyFraction(-b, 2 * a)
             except ZeroDivisionError: 
                 return None
         elif equation.degree == 2:
@@ -718,7 +674,12 @@ class Equation:
 
             return solution
             
-
+    
 if __name__ == "__main__":
     n = Equation("2x**3-2x**2+8x=2x**2")
-    print(n**2)
+    print(n)
+    print(n.find())
+    print(n.parse)
+    print(n.solve())
+    print(Equation("x**3+x**3+2x**3-x**3+567"))
+    print(Equation("8x**3-15x**2+6x**2-8+5+4+7x**3-8x"))
