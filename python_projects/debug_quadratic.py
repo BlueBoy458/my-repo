@@ -1,8 +1,5 @@
 from quadratic_pro import Equation
-#from solvepy import Equation
 from timeit import timeit
-from re import compile, findall, match
-
 
         
 a = Equation("5x**3+5x**2+8")._Equation__find()
@@ -155,11 +152,14 @@ if __name__ == "__main__":
                 print("An exception occurred:", e)
                 
     
-    a = Equation("x**2-3")
-    print(a**2 + 8*a - 15)
-    a = Equation("x")
-    print((a + 5) * (a - 3))
-    #print((a+1)**5)
-    x = Equation("x**2 -18x +7x**3")
-    print(x**2+a**2)
-    #print((x**4).assign(100400001))
+    #run()
+    #a = Equation("x**2-3.5")
+    #print(a**2 + 8*a - 15)
+    #a = Equation(input("Equation 1: "))
+    #b = Equation(input("Equation 2: "))
+    #print(a % b)
+    a = Equation("6x**4 - 5x**3 + 13x**2 + 4x - 5")
+    b = Equation("2x**2 - x + 3")
+    print(a % b)
+    #print(Equation("x") - 2)
+    #print(-Equation("2x-2"))

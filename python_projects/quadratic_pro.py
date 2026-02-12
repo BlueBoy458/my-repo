@@ -1,4 +1,4 @@
-from re import findall, Match, search, compile, split
+from re import findall, Match, compile, split
 from math import gcd
 import cmath
 import math
@@ -6,7 +6,7 @@ from typing import List, Literal, Self, Union
 from collections.abc import Iterable
 from functools import cached_property
 from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
-from timeit import timeit
+from time import sleep
 # TO-DO LIST:
 #   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
 #   + Simplify the equation and the result of the equation when it is displayed (DONE, probably)
@@ -36,10 +36,25 @@ def to_equation(x, sym="x"):
     elif isinstance(x, Iterable):
         return Equation.from_parse(x, symbolic=sym)
 
+def to_number(x):
+    return int(x) if float(x).is_integer() else float(x)
+
 def sum_helper(n):
     result = sum([float(x) for x in n])
     return int(result) if result.is_integer() else result
     
+def list_helper(x, t):
+    for i in range(t):
+        x.insert(0, 0)
+def helper(x, y):
+    
+    diff = abs(len(x) - len(y))
+    if len(x) > len(y):
+        list_helper(y, diff) 
+    elif len(x) < len(y):
+        list_helper(x, diff) 
+    return [x, y]
+
 class Equation:
     """
     A class that solves simple symbolic equations.\n
@@ -104,9 +119,9 @@ class Equation:
             
     
     def __check_symbol(self, other):
-        #print(other)
         if self.symbol != other.symbol and not Equation.__isnumber(str(other)):
-            raise SymbolError(
+            if not(self.symbol or other.symbol):
+                raise SymbolError(
                 f"Unmatched symbol: '{self.symbol}', '{other.symbol}'"
                 f"(From equation: {self}; {other})"
                 )
@@ -129,13 +144,13 @@ class Equation:
     
     
     def __mul__(self, other):
-        if isinstance(other, (int, float)):
-            n = [x * other for x in self.parse]
+        if isinstance(other, (int, float)) or Equation.__isnumber(str(other)):
+            n = [x * to_number(other) for x in self.parse]
             return Equation.from_parse(n, symbolic=self.symbol)
         elif isinstance(other, (str, Equation)):
             self.__check_symbol(other)
-            if Equation.__isnumber(other):
-                return self.__mul__(other if float(other).is_integer() else float(other))
+            if Equation.__isnumber(str(self)):
+                return other.__mul__(to_number(str(self))) 
             other = to_equation(other)
             deg = self.degree + other.degree
             left, right = self.parse, other.parse
@@ -166,10 +181,33 @@ class Equation:
             self *= self
             other >>= 1
         return result
+    
+    
+    #def zero_exp(self):
+
+    def __divide_helper(self, other):
+        res = self.parse[0] / other.parse[0]
+        if self.degree - other.degree != 0:
+            return Equation(f"{res}{self.symbol}**{self.degree - other.degree}")
+        return Equation(res)
+    def _divide(self, other, get_remainder = False):
+        #numerator = self.as_dict()\
+        #divisor = 0
+        remainder = self
+        #print(self.__divide_helper(other))
+        a = ""
+        while remainder.degree >= other.degree:
+            divisor = remainder.__divide_helper(other)
+            a += divisor
+            remainder -= other * divisor 
+        return a if not get_remainder else remainder
     def __truediv__(self, other):
-        ...
+        return self._divide(other)
     
-    
+    def __mod__(self, other):
+        return self._divide(other, get_remainder=True)
+
+        return 0
     def __pos__(self):
         return self
      
@@ -191,7 +229,7 @@ class Equation:
             return "'" + "','".join(n) + "'"
         
         pattern = compile(r"[a-zA-Z]")
-        unallowed = compile(r"[^a-zA-Z0-9+\-*=.]")
+        unallowed = compile(r"[^a-zA-Z0-9+\-*=()/.]")
         chars = pattern.findall(self.equation)
         chars_set = set(chars) 
         if len(chars_set) == 0:
@@ -250,15 +288,22 @@ class Equation:
         if len(exprs) > 1 and not exprs[0] and Equation.__isnumber(exprs[1]):
             return str(exprs[1]).lstrip("+")
         if not any(exprs):
-            return f"0{self.symbol} = 0"
+            return f"0{self.symbol}"
         if exprs[0].startswith("+"):
             exprs[0] = exprs[0].replace("+", "", 1)
 
         for i, x in enumerate(exprs):
             if i >= 1: 
                 exprs[i] = x.replace("+", "+ ").replace("-", "- ")
-        return f"{' '.join(exprs)} = 0"
+        return f"{' '.join(exprs)}"
         
+    def __float__(self):
+        if Equation.__isnumber(str(self)):
+            return float(str(self))
+        return NotImplemented 
+    
+    def __int__(self):
+        return int(float(self))
     
     def __cleanup(self, order, constant=""):
         sorted_order = []
@@ -482,7 +527,6 @@ class Equation:
                 helper(right, diff)
             chars = set(findall(r"[a-zA-Z]", self.equation))
             sym = list(chars)[0] if chars else "x"
-            n = len(left) if len(left) < len(right) else len(right)
             for x in range(len(left)): 
                 res.append(left[x] - right[x])
             return Equation.from_parse(res, symbolic = sym)
@@ -531,7 +575,31 @@ class Equation:
         sym.append(num)
         return sym
         
-       
+    
+    def as_dict(self: "Equation", reverse=False, make_unique=False):
+
+        n = self.parse[::-1]
+        res = {}
+        s = range(len(n)) if not reverse else range(len(n) - 1, -1, -1)
+        for x in s:
+            if make_unique and n[x] == 0:
+                continue
+            res[x] = n[x]
+        
+        return res
+    
+    @staticmethod
+    def from_dict(self: dict):
+        deg = sorted(list(self.keys()), reverse=True)
+        a = []
+        for x in range(max(deg), -1, -1):
+            if x in deg:
+                a.append(self[x])
+            else:
+                a.append(0)
+        return Equation.from_parse(a)
+    
+
     def assign(self, value):
         eq = to_equation(self)
         result = 0
@@ -543,7 +611,7 @@ class Equation:
     def solve(
         self: Union[Self, str, int, Iterable[int | float]], 
         right_side: Union[str, int, Iterable[int | float]] = [], allow_imag=True,
-    ) -> (PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction] | Literal[float("inf")] | None):
+    ) -> (PrettyFraction | dict[str, PrettySqrtExpr | int | PrettyFraction] | Literal["inf"] | None):
         """Return a dictionary containing all real roots and imaginary roots
         of an equation (if possible). \n
         If there are infinite possible solutions, return float("inf"). \n
