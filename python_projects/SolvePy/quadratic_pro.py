@@ -6,7 +6,7 @@ from typing import List, Literal, Self, Union
 from collections.abc import Iterable
 from functools import cached_property
 from sqrtpy import PrettySqrt, PrettySqrtExpr, PrettyFraction
-from time import sleep
+
 # TO-DO LIST:
 #   + Complete the quadratic equation logic for the Equation.solve() method (DONE)
 #   + Simplify the equation and the result of the equation when it is displayed (DONE, probably)
@@ -76,18 +76,22 @@ class Equation:
     
     #Class variables (patterns)
     __number = r"[+-]?(?:\d+\.\d*|\.\d+|\d+)"
-    __symbols = r"\*?[a-zA-Z]"
+    __zero = compile(r"[+-]?0+\.\d*")
+    __symbols = r"\*?[a-zA-Z]+"
     __exp_pattern = r"(?:\*\*\d+)"
     __exp1_pattern = compile(r"(\*\*0*1(?!\d))|\s")
     __zero_exp = compile(r"\*\*0*(?=\d)")
     __pattern = compile(r"(?<=[a-zA-Z]\*\*)\d+")
-    
-    
+    pattern = compile(r"[a-zA-Z]")
+    unallowed = compile(r"[^a-zA-Z0-9+\-*=()/.]")
+    __allow_symbols = False
+    sym_pattern = compile(rf"(?:{__number}|[+-])?{__symbols}{__exp_pattern}?")
     def __init__(self, equation: str | Literal[0], allow_absurd: bool = True):
         self.unchanged = str(equation).strip()
+        #self.equation = self.unchanged
         self.equation = Equation.__exp1_pattern.sub(r"", str(equation))
         self.equation = Equation.__zero_exp.sub(r"**", self.equation)
-        
+        self.allow_symbols = False
         if (
             self.equation.startswith("*")
             or any(self.equation.endswith(x) for x in "*+-")
@@ -117,7 +121,9 @@ class Equation:
         self.equation = compile(r'\+-|-\+').sub('-', self.equation)
         self.equation = compile(r'\+\+|--').sub('+', self.equation)
             
-    
+    @classmethod
+    def _unrestrict_symbols(cls):
+        cls.__allow_symbols = True
     def __check_symbol(self, other):
         if self.symbol != other.symbol and not Equation.__isnumber(str(other)):
             if not(self.symbol or other.symbol):
@@ -128,7 +134,7 @@ class Equation:
     def __add__(self, other):
         other = to_equation(other).invert()
         self.__check_symbol(other)
-        return Equation.from_parse(self.parse, other.parse, symbolic=self.symbol)
+        return Equation.from_parse(self.parse, other.parse, symbolic=self.symbol or other.symbol)
     
     
     def __radd__(self, other):
@@ -161,7 +167,7 @@ class Equation:
                 for i, z in enumerate(right[::-1]):
                     a = y * z
                     result[abs(deg - ind - i)] += a
-            return Equation.from_parse(list(result.values())[::-1], symbolic=self.symbol)
+            return Equation.from_parse(list(result.values())[::-1], symbolic=self.symbol or other.symbol)
         return NotImplemented
     
     
@@ -182,8 +188,6 @@ class Equation:
             other >>= 1
         return result
     
-    
-    #def zero_exp(self):
 
     def __divide_helper(self, other):
         res = self.parse[0] / other.parse[0]
@@ -191,23 +195,22 @@ class Equation:
             return Equation(f"{res}{self.symbol}**{self.degree - other.degree}")
         return Equation(res)
     def _divide(self, other, get_remainder = False):
-        #numerator = self.as_dict()\
-        #divisor = 0
         remainder = self
-        #print(self.__divide_helper(other))
-        a = ""
+        a = Equation(0)
         while remainder.degree >= other.degree:
             divisor = remainder.__divide_helper(other)
             a += divisor
             remainder -= other * divisor 
         return a if not get_remainder else remainder
+        
+        
     def __truediv__(self, other):
         return self._divide(other)
     
     def __mod__(self, other):
         return self._divide(other, get_remainder=True)
-
-        return 0
+        
+        
     def __pos__(self):
         return self
      
@@ -220,6 +223,9 @@ class Equation:
        return bool(self.find()[0])
        
        
+    def __allow_symbols(self):
+        return False
+        
     @cached_property
     def symbol(self) -> str:
         """
@@ -240,8 +246,10 @@ class Equation:
             f"Equation must have only one symbol, found {i}:"
                     f"{__separate(sorted(list(chars_set)))}\n (From expression '{self.equation}')"
             )
-        if i > 1 or (i < 1 and not self.allow_absurd):
-            raise SymbolError(symbol_err)
+        #if not Equation.__allow_symbols:
+        if i > 1 or i < 1 and not self.allow_absurd:
+            
+                raise SymbolError(symbol_err)
             
         elif special := unallowed.findall(self.equation):
             raise SymbolError(
@@ -308,6 +316,7 @@ class Equation:
     def __cleanup(self, order, constant=""):
         sorted_order = []
         for x in order:
+            #print(Equation.__zero.findall(x))
             if x in ["0", "+0", "-0"]:
                 continue
             
@@ -380,6 +389,7 @@ class Equation:
             for term in sym:
                 remainder = remainder.replace(term, "", 1)
             n = findall(Equation.__number, remainder)
+            #print(str(sum_helper(n)))
             return str(sum_helper(n))
     
         return self.__cleanup(Equation.__simplify(sym, self.symbol))
@@ -394,10 +404,11 @@ class Equation:
         constant = self.__find(get_c=True) 
         if not any(x in constant for x in "+-") and order:
             constant = "+" + constant
-
-        if len(constant) > 1 and Equation.__isnumber(constant[1]) and int(constant[1]):  # Check if constant is provided
-            order.append(constant)
         
+        if len(constant) > 1 and Equation.__isnumber(constant[1]) and float(constant[1]):  # Check if constant is provided
+            order.append(constant)
+        elif float(constant):
+            order.append(constant)
         return order 
         
         
@@ -406,7 +417,7 @@ class Equation:
                 return True
             p = compile(r"\.|\s")
             try:
-                return p.sub("r\1", n).lstrip("+-").isdigit()
+                return p.sub(r"", n).lstrip("+-").isdigit()
             except TypeError:
                 return False
     
@@ -788,5 +799,8 @@ class Equation:
             
 
 if __name__ == "__main__":
+    #Equation._unrestrict_symbols()
     n = Equation("2x**3-2x**2+8x=2x**2")
-    print(n**2)
+    print(n)
+    #Equation._unrestrict_symbols()
+    #print(Equation._Equation__allow_symbols)

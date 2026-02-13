@@ -152,14 +152,19 @@ if __name__ == "__main__":
                 print("An exception occurred:", e)
                 
     
-    #run()
+    #run(True)
     #a = Equation("x**2-3.5")
     #print(a**2 + 8*a - 15)
     #a = Equation(input("Equation 1: "))
     #b = Equation(input("Equation 2: "))
     #print(a % b)
-    a = Equation("6x**4 - 5x**3 + 13x**2 + 4x - 5")
-    b = Equation("2x**2 - x + 3")
-    print(a % b)
+    n = "6x**5 - 2x**4 - 15x + 1"
+    a = Equation(n)
+    b = Equation("3x**2 + 2x")
+    print("Division result:",a / b)
+    print("Modulus result:", a % b)
+    print(a**2)
+    #print(Equation("8x**2-3x+6")**15)
+    #print(Equation(5) + a)
     #print(Equation("x") - 2)
     #print(-Equation("2x-2"))
